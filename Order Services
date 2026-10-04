@@ -1,0 +1,25 @@
+import ballerina/http;
+
+type Order record {|
+    string orderId;
+    string customerId;
+    string restaurantId;
+    string status;
+|};
+
+Order[] orders = [];
+
+service /orders on new http:Listener(8080) {
+
+    resource function post .(Order order) returns Order {
+        Order newOrder = {
+            orderId: order.orderId,
+            customerId: order.customerId,
+            restaurantId: order.restaurantId,
+            status: "CREATED"
+        };
+
+        orders.push(newOrder);
+        return newOrder;
+    }
+}
