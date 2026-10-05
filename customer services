@@ -1,0 +1,22 @@
+import ballerina/http;
+
+type Customer record {|
+    int id;
+    string name;
+    string email;
+    string address;
+|};
+
+service /customers on new http:Listener(8081) {
+
+    resource function get .() returns Customer[] {
+        return [
+            {
+                id: 1,
+                name: "Edward",
+                email: "edward@example.com",
+                address: "Windhoek"
+            }
+        ];
+    }
+}

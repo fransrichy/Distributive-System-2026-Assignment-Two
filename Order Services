@@ -1,25 +1,46 @@
 import ballerina/http;
 
-type Order record {|
-    string orderId;
-    string customerId;
-    string restaurantId;
-    string status;
+type Customer record {|
+    int id;
+    string name;
+    string email;
+    string phone;
+    string[] deliveryAddresses;
+    string[] orderHistory;
 |};
 
-Order[] orders = [];
+Customer[] customers = [];
 
-service /orders on new http:Listener(8080) {
+service /customers on new http:Listener(8081) {
 
-    resource function post .(Order order) returns Order {
-        Order newOrder = {
-            orderId: order.orderId,
-            customerId: order.customerId,
-            restaurantId: order.restaurantId,
-            status: "CREATED"
+    // Create a customer
+    resource function post .(Customer customer) returns Customer {
+        Customer newCustomer = {
+            id: customer.id,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            deliveryAddresses: customer.deliveryAddresses,
+            orderHistory: customer.orderHistory
         };
 
-        orders.push(newOrder);
-        return newOrder;
+        customers.push(newCustomer);
+        return newCustomer;
+    }
+
+    // Get all customers
+    resource function get .() returns Customer[] {
+        return customers;
+    }
+
+    // Get one customer
+    resource function get [int id]() returns Customer|http:NotFound {
+        foreach Customer customer in customers {
+            if customer.id == id {
+                return customer;
+            }
+        }
+
+        return http:NOT_FOUND;
     }
 }
