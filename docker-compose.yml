@@ -1,0 +1,280 @@
+name: food-delivery
+
+# Distributed Food Delivery Platform - DSA612S Assignment 2
+#
+#   docker compose up -d --build                         # core platform + web UI
+#   docker compose --profile monitoring up -d --build    # + Prometheus & Grafana
+#   docker compose --profile tools up -d                 # + Kafka UI
+#
+# Networks:
+#   backend  - Kafka, MongoDB and the microservices (infrastructure is NOT reachable from the edge)
+#   frontend - the API gateway / web UI and the microservices it exposes
+# Only the gateway (8080), Grafana (3000), Prometheus (9090), Kafka UI (8090) and the
+# Kafka/Mongo admin ports are published on the host. Services are reached via the gateway:
+#   http://localhost:8080/api/<service-name>/...
+
+x-ballerina-service: &ballerina-service
+  restart: unless-stopped
+  networks: [backend, frontend]
+  mem_limit: 400m
+  depends_on: &service-deps
+    kafka-init:
+      condition: service_completed_successfully
+    mongodb:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-common-env: &common-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  MONGO_URI: mongodb://mongodb:27017
+  TZ_OFFSET_HOURS: "2"
+
+services:
+  # ---------------------------------------------------------------- infrastructure
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: kafka
+    hostname: kafka
+    restart: unless-stopped
+    networks: [backend]
+    ports:
+      - "9094:9094" # host access for CLI tools (EXTERNAL listener)
+    environment:
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw" # base64 UUID required by KRaft storage format
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller # KRaft mode - no ZooKeeper
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false" # topics are managed explicitly by kafka-init
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx384m"
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9092' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    container_name: kafka-init
+    networks: [backend]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/scripts/create-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_HEAP_OPTS: "-Xmx128m"
+    volumes:
+      - ./infra/kafka/create-topics.sh:/scripts/create-topics.sh:ro
+    restart: "no"
+
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    restart: unless-stopped
+    networks: [backend]
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "27017:27017" # host access for MongoDB Compass / mongosh
+    volumes:
+      - mongo-data:/data/db
+      - ./infra/mongo/init-mongo.js:/docker-entrypoint-initdb.d/01-init.js:ro
+    mem_limit: 512m
+    healthcheck:
+      # mongosh (MongoDB 6+) or the legacy mongo shell (MongoDB 4.4 on CPUs without AVX)
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' 2>/dev/null || mongo --quiet --eval 'db.adminCommand(\"ping\").ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ----------------------------------------------------------------- microservices
+  customer-service:
+    <<: *ballerina-service
+    build: ./services/customer-service
+    image: food-delivery/customer-service:1.0.0
+    container_name: customer-service
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8081"
+      MONGO_DATABASE: customer_db
+
+  restaurant-service:
+    <<: *ballerina-service
+    build: ./services/restaurant-service
+    image: food-delivery/restaurant-service:1.0.0
+    container_name: restaurant-service
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8082"
+      MONGO_DATABASE: restaurant_db
+      AUTO_KITCHEN: "true"       # kitchen starts/finishes orders automatically (set false to use the UI)
+      AUTO_START_SECONDS: "5"
+      AUTO_PREP_SECONDS: "15"
+
+  order-service:
+    <<: *ballerina-service
+    build: ./services/order-service
+    image: food-delivery/order-service:1.0.0
+    container_name: order-service
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8083"
+      MONGO_DATABASE: order_db
+      CUSTOMER_SERVICE_URL: http://customer-service:8081
+      RESTAURANT_SERVICE_URL: http://restaurant-service:8082
+      DELIVERY_SERVICE_URL: http://delivery-service:8085
+    depends_on:
+      <<: *service-deps
+      customer-service:
+        condition: service_started
+      restaurant-service:
+        condition: service_started
+      delivery-service:
+        condition: service_started
+
+  payment-service:
+    <<: *ballerina-service
+    build: ./services/payment-service
+    image: food-delivery/payment-service:1.0.0
+    # no container_name: this service can be scaled out, e.g.
+    #   docker compose up -d --scale payment-service=3   (Kafka rebalances the 6 partitions)
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8084"
+      MONGO_DATABASE: payment_db
+      PAYMENT_LATENCY_MS: "1200"
+      PAYMENT_FAILURE_RATE: "0.0"
+
+  delivery-service:
+    <<: *ballerina-service
+    build: ./services/delivery-service
+    image: food-delivery/delivery-service:1.0.0
+    container_name: delivery-service
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8085"
+      MONGO_DATABASE: delivery_db
+      SIMULATION_ENABLED: "true"
+      AUTO_DRIVE: "true"         # drivers pick up / deliver automatically (set false to use the driver UI)
+      DRIVER_SPEED_KMH: "40"
+      SIM_SPEED_FACTOR: "8"
+
+  notification-service:
+    <<: *ballerina-service
+    build: ./services/notification-service
+    image: food-delivery/notification-service:1.0.0
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8086"
+      MONGO_DATABASE: notification_db
+
+  admin-service:
+    <<: *ballerina-service
+    build: ./services/admin-service
+    image: food-delivery/admin-service:1.0.0
+    container_name: admin-service
+    environment:
+      <<: *common-env
+      HTTP_PORT: "8087"
+      MONGO_DATABASE: admin_db
+      ON_TIME_TARGET_MINUTES: "45"
+      CUSTOMER_SERVICE_URL: http://customer-service:8081
+      RESTAURANT_SERVICE_URL: http://restaurant-service:8082
+      ORDER_SERVICE_URL: http://order-service:8083
+      PAYMENT_SERVICE_URL: http://payment-service:8084
+      DELIVERY_SERVICE_URL: http://delivery-service:8085
+      NOTIFICATION_SERVICE_URL: http://notification-service:8086
+
+  # -------------------------------------------------------- API gateway + web UI
+  web:
+    build: ./ui
+    image: food-delivery/web:1.0.0
+    container_name: web
+    restart: unless-stopped
+    networks: [frontend]
+    ports:
+      - "8080:80"
+    mem_limit: 64m
+    depends_on:
+      - customer-service
+      - restaurant-service
+      - order-service
+      - payment-service
+      - delivery-service
+      - notification-service
+      - admin-service
+
+  # --------------------------------------------- observability (profile: monitoring)
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    profiles: [monitoring]
+    restart: unless-stopped
+    networks: [backend]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    mem_limit: 256m
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    profiles: [monitoring]
+    restart: unless-stopped
+    networks: [backend]
+    depends_on: [prometheus]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/food-delivery.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    mem_limit: 256m
+
+  # ------------------------------------------------------------ tools (profile: tools)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    profiles: [tools]
+    networks: [backend]
+    depends_on: [kafka]
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: food-delivery
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    mem_limit: 512m
+
+networks:
+  backend:
+    name: fd-backend
+  frontend:
+    name: fd-frontend
+
+volumes:
+  mongo-data:

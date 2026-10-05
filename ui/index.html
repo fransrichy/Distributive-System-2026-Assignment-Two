@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Namibia Eats</title>
+  <meta name="description" content="Distributed food delivery platform - DSA612S Assignment 2">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍲</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🍲</span>
+    <div>
+      <div class="brand-name">Namibia Eats</div>
+      <div class="brand-sub">Distributed food delivery · Windhoek</div>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Views">
+    <button data-view="customer" class="active"><span>🧑‍🍳</span> Customer</button>
+    <button data-view="restaurant"><span>🍽️</span> Restaurant</button>
+    <button data-view="driver"><span>🛵</span> Driver</button>
+    <button data-view="admin"><span>📊</span> Admin</button>
+  </nav>
+  <div class="status-group">
+    <span class="conn" id="connPill" title="Connection to the API gateway"><i></i><b>Connecting…</b></span>
+    <span class="surge" id="surgeBadge" title="Dynamic delivery pricing">Surge ×1.00</span>
+  </div>
+</header>
+
+<div id="offlineBanner" class="banner hidden">
+  <strong>Platform not reachable.</strong>
+  Start it with <code>docker compose up -d</code> and open <a href="http://localhost:8080">http://localhost:8080</a>.
+  <span id="offlineDetail" class="muted"></span>
+</div>
+
+<main>
+  <!-- ============================== CUSTOMER ============================== -->
+  <section id="view-customer" class="view active">
+    <div class="hero">
+      <div>
+        <h1>Hungry? Order from Windhoek's local kitchens</h1>
+        <p>Pick a restaurant, build your order and follow your driver live on the map.</p>
+      </div>
+      <div class="hero-account">
+        <label>Signed in as
+          <select id="customerSelect"></select>
+        </label>
+        <button class="ghost small" id="btnRegister">＋ New account</button>
+      </div>
+    </div>
+    <div id="customerInfo" class="info-strip"></div>
+
+    <div class="grid three">
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">🏪</span> Restaurants</h2></div>
+        <div id="restaurantList" class="list"><div class="empty">Loading restaurants…</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2 id="menuTitle"><span class="ico">📋</span> Menu</h2></div>
+        <div id="menuList" class="list"><div class="empty"><span>👈</span>Choose a restaurant to see its menu</div></div>
+        <div id="cart" class="cart hidden">
+          <h3>Your order</h3>
+          <div id="cartLines"></div>
+          <label>Deliver to <select id="addressSelect"></select></label>
+          <div class="row">
+            <label>Payment
+              <select id="paymentMethod">
+                <option value="CARD">💳 Card</option>
+                <option value="MOBILE_MONEY">📱 Mobile money</option>
+                <option value="CASH_ON_DELIVERY">💵 Cash on delivery</option>
+              </select>
+            </label>
+            <label>Card last 4 <input id="cardLast4" maxlength="4" placeholder="4242" value="4242"></label>
+          </div>
+          <p class="hint">Tip: card ending <b>0000</b> is declined - watch the saga cancel the order.</p>
+          <div id="quote" class="quote"></div>
+          <button id="btnPlaceOrder" class="primary wide">Place order</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">🧾</span> My orders</h2></div>
+        <div id="orderList" class="list compact"></div>
+        <div id="tracking" class="hidden">
+          <div class="card-head">
+            <h3 id="trackTitle">Tracking</h3>
+            <button class="danger small" id="btnCancelOrder">Cancel order</button>
+          </div>
+          <ol id="stepper" class="stepper"></ol>
+          <div id="trackInfo" class="track-info"></div>
+          <div id="trackMap" class="map"></div>
+          <h3>Notifications</h3>
+          <div id="customerNotifications" class="feed"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= RESTAURANT ============================= -->
+  <section id="view-restaurant" class="view">
+    <div class="hero">
+      <div>
+        <h1>Kitchen dashboard</h1>
+        <p>Paid orders arrive here automatically. Move them through the kitchen and keep the stock up to date.</p>
+      </div>
+      <div class="hero-account">
+        <label>Restaurant <select id="restaurantSelect"></select></label>
+        <label class="switch"><input type="checkbox" id="acceptingToggle"> Accepting orders</label>
+      </div>
+    </div>
+    <div class="info-strip"><span id="restaurantOpen" class="chip"></span> <span class="muted small" id="restaurantHours"></span></div>
+    <div class="kanban">
+      <div class="lane"><h3><span class="dot q"></span>Queued</h3><div id="lane-QUEUED"></div></div>
+      <div class="lane"><h3><span class="dot p"></span>Preparing</h3><div id="lane-PREPARING"></div></div>
+      <div class="lane"><h3><span class="dot r"></span>Ready for pickup</h3><div id="lane-READY"></div></div>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">📦</span> Menu &amp; live inventory</h2></div>
+        <div class="table-wrap"><table class="table" id="inventoryTable"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">🔔</span> Kitchen notifications</h2></div>
+        <div id="restaurantNotifications" class="feed"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================== DRIVER =============================== -->
+  <section id="view-driver" class="view">
+    <div class="hero">
+      <div>
+        <h1>Driver app</h1>
+        <p>Go online to receive jobs. Routes are optimised with A* and your position updates live.</p>
+      </div>
+      <div class="hero-account">
+        <label>Driver <select id="driverSelect"></select></label>
+        <div class="row tight">
+          <button id="btnDriverOnline" class="primary small">Go online</button>
+          <button id="btnDriverOffline" class="ghost small">Go offline</button>
+        </div>
+      </div>
+    </div>
+    <div class="info-strip"><span id="driverStatus" class="chip"></span> <span id="driverStats" class="muted small"></span></div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">📍</span> Current delivery</h2></div>
+        <div id="driverJob"><div class="empty"><span>🛵</span>No active delivery</div></div>
+        <div class="row">
+          <button id="btnPickup" class="primary">✅ Picked up</button>
+          <button id="btnComplete" class="primary">🏁 Delivered</button>
+        </div>
+        <div id="driverMap" class="map tall"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">🔔</span> Notifications</h2></div>
+        <div id="driverNotifications" class="feed"></div>
+        <div class="card-head mt"><h2><span class="ico">🗂️</span> Delivery history</h2></div>
+        <div id="driverHistory" class="list compact"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================== ADMIN ================================ -->
+  <section id="view-admin" class="view">
+    <div class="hero">
+      <div>
+        <h1>Platform control room</h1>
+        <p>Reports built from Kafka events: restaurant statistics, delivery performance and system health.</p>
+      </div>
+      <div class="hero-links">
+        <a class="btn ghost small" href="http://localhost:3000" target="_blank" rel="noopener">Grafana ↗</a>
+        <a class="btn ghost small" href="http://localhost:9090" target="_blank" rel="noopener">Prometheus ↗</a>
+        <a class="btn ghost small" href="http://localhost:8090" target="_blank" rel="noopener">Kafka UI ↗</a>
+      </div>
+    </div>
+    <div id="kpis" class="kpis"></div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head">
+          <h2><span class="ico">🗺️</span> Live fleet</h2>
+          <label class="switch small"><input type="checkbox" id="networkToggle" checked> Road network</label>
+        </div>
+        <div id="fleetMap" class="map tall"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">💓</span> System health</h2></div>
+        <div id="health" class="health"></div>
+        <div class="card-head mt"><h2><span class="ico">📨</span> Kafka topics</h2></div>
+        <div class="table-wrap"><table class="table" id="eventsTable"></table></div>
+      </div>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">🏆</span> Restaurant statistics</h2></div>
+        <div class="table-wrap"><table class="table" id="restaurantStats"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">🚚</span> Delivery performance</h2></div>
+        <div class="table-wrap"><table class="table" id="driverStatsTable"></table></div>
+      </div>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">⏰</span> Orders by hour <small class="muted">Windhoek time</small></h2></div>
+        <div id="hourly" class="bars"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2><span class="ico">☠️</span> Dead-letter queue</h2></div>
+        <div id="deadLetters" class="feed"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div><b>Namibia Eats</b> · DSA612S Assignment 2 · Group 22 · Namibia University of Science and Technology</div>
+  <div class="muted">Ballerina · Kafka · MongoDB · Docker · Prometheus · Grafana</div>
+</footer>
+
+<dialog id="registerDialog">
+  <form method="dialog" id="registerForm">
+    <h2>Create account</h2>
+    <label>Name <input name="name" required minlength="2"></label>
+    <label>Email <input name="email" type="email" required></label>
+    <label>Phone <input name="phone" required value="+26481"></label>
+    <label>Password <input name="password" type="password" required minlength="6"></label>
+    <label>Street address <input name="street" required value="Robert Mugabe Ave 10"></label>
+    <p class="hint">The delivery pin is placed in the Windhoek CBD; more addresses can be added through the API.</p>
+    <div class="row end">
+      <button value="cancel" formnovalidate class="ghost">Cancel</button>
+      <button value="ok" class="primary">Register</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

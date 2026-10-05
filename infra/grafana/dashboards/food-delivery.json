@@ -1,0 +1,144 @@
+{
+  "uid": "food-delivery",
+  "title": "Food Delivery Platform",
+  "description": "Business KPIs, Kafka event flow and HTTP health of the Ballerina microservices",
+  "tags": ["food-delivery", "ballerina", "kafka"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "editable": true,
+  "panels": [
+    { "type": "row", "title": "Business KPIs", "id": 100, "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+    {
+      "type": "stat", "title": "Orders placed", "id": 1, "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "expr": "sum(fd_orders_created_total_value) or vector(0)" }]
+    },
+    {
+      "type": "stat", "title": "Delivered", "id": 2, "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "expr": "sum(fd_order_transitions_total_value{status=\"DELIVERED\"}) or vector(0)" }]
+    },
+    {
+      "type": "stat", "title": "Cancelled", "id": 3, "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "expr": "sum(fd_order_transitions_total_value{status=\"CANCELLED\"}) or vector(0)" }]
+    },
+    {
+      "type": "gauge", "title": "Surge multiplier", "id": 4, "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 1, "max": 2.5, "decimals": 2, "unit": "x",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null }, { "color": "orange", "value": 1.5 }, { "color": "red", "value": 2 } ] }
+        }
+      },
+      "targets": [{ "refId": "A", "expr": "max(fd_surge_multiplier_value) or vector(1)" }]
+    },
+    {
+      "type": "stat", "title": "Active deliveries", "id": 5, "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "expr": "max(fd_active_deliveries_value) or vector(0)" }]
+    },
+    {
+      "type": "stat", "title": "Dead-lettered events", "id": 6, "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } } },
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "expr": "sum(fd_events_dead_lettered_total_value) or vector(0)" }]
+    },
+    {
+      "type": "timeseries", "title": "Order state transitions / min", "id": 7,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } } },
+      "targets": [{ "refId": "A", "legendFormat": "{{status}}",
+        "expr": "sum by (status) (rate(fd_order_transitions_total_value[1m])) * 60" }]
+    },
+    {
+      "type": "timeseries", "title": "Drivers by status", "id": 8,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 5 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 25, "stacking": { "mode": "normal" } } } },
+      "targets": [{ "refId": "A", "legendFormat": "{{status}}", "expr": "max by (status) (fd_drivers_value)" }]
+    },
+    {
+      "type": "piechart", "title": "Payments by outcome", "id": 9,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 5 },
+      "options": { "legend": { "displayMode": "list", "placement": "right" }, "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "legendFormat": "{{status}}", "expr": "sum by (status) (fd_payments_total_value)" }]
+    },
+
+    { "type": "row", "title": "Kafka event flow", "id": 101, "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 } },
+    {
+      "type": "timeseries", "title": "Events published per topic / min", "id": 10,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "legendFormat": "{{topic}}",
+        "expr": "sum by (topic) (rate(fd_events_published_total_value[1m])) * 60" }]
+    },
+    {
+      "type": "timeseries", "title": "Events consumed per service / min", "id": 11,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "legendFormat": "{{service}}",
+        "expr": "sum by (service) (rate(fd_events_consumed_total_value[1m])) * 60" }]
+    },
+    {
+      "type": "bargauge", "title": "Notifications sent by channel", "id": 12,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 23 },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "legendFormat": "{{channel}} -> {{recipient}}",
+        "expr": "sum by (channel, recipient) (fd_notifications_sent_total_value)" }]
+    },
+    {
+      "type": "bargauge", "title": "Kitchen tickets by status", "id": 13,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 23 },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "legendFormat": "{{status}}", "expr": "sum by (status) (fd_kitchen_tickets_total_value)" }]
+    },
+
+    { "type": "row", "title": "HTTP / service health", "id": 102, "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 } },
+    {
+      "type": "timeseries", "title": "HTTP requests / second per service", "id": 14,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [{ "refId": "A", "legendFormat": "{{service}}", "expr": "sum by (service) (rate(requests_total_value[1m]))" }]
+    },
+    {
+      "type": "timeseries", "title": "Mean HTTP response time per service", "id": 15,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "refId": "A", "legendFormat": "{{service}}",
+        "expr": "max by (service) (response_time_seconds_mean{timeWindow=\"60000\"})" }]
+    },
+    {
+      "type": "stat", "title": "Services up (scraped by Prometheus)", "id": 16,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 38 },
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": {
+        "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }] } },
+      "options": { "colorMode": "background", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "refId": "A", "legendFormat": "{{service}}", "expr": "up{job=\"food-delivery-services\"}" }]
+    }
+  ]
+}

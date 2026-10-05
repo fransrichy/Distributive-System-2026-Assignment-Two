@@ -1,0 +1,16 @@
+# Ballerina build output
+target/
+**/target/
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+# Logs
+*.log
+# Office lock files
+~$*
+
+# Machine-specific compose overrides
+docker-compose.override.yml
