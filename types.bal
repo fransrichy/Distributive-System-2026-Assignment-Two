@@ -1,3 +1,5 @@
+import restaurant_service.domain;
+
 import ballerina/constraint;
 
 public type GeoPoint record {|
@@ -7,124 +9,133 @@ public type GeoPoint record {|
     float lon;
 |};
 
-public type Address record {|
-    string addressId;
-    string label;
-    string street;
-    string city;
-    GeoPoint location;
-    boolean isDefault;
-|};
-
-public type NotificationPrefs record {|
-    boolean email;
-    boolean sms;
-    boolean push;
-|};
-
-# Persisted in `customer_db.customers`. Password hashes never leave the service.
-public type Customer record {|
-    string customerId;
-    string name;
-    string email;
-    string phone;
-    string passwordHash;
-    Address[] addresses;
-    NotificationPrefs notificationPrefs;
-    int totalOrders;
-    float totalSpent;
-    string createdAt;
-    string updatedAt;
-|};
-
-# Public representation of a customer account.
-public type CustomerView record {|
-    string customerId;
-    string name;
-    string email;
-    string phone;
-    Address[] addresses;
-    NotificationPrefs notificationPrefs;
-    int totalOrders;
-    float totalSpent;
-    string createdAt;
-    string updatedAt;
-|};
-
-# Read model in `customer_db.order_history`, built from `orders.status-changed` events.
-public type OrderHistoryEntry record {|
-    string orderId;
-    string customerId;
+# Persisted in `restaurant_db.restaurants`.
+public type Restaurant record {|
     string restaurantId;
-    string restaurantName;
-    string status;
-    float total;
-    string currency;
-    int itemCount;
-    string? driverName;
-    string? reason;
-    string orderCreatedAt;
-    int orderCreatedAtMs;
-    string updatedAt;
-    int updatedAtMs;
-|};
-
-public type AddressInput record {|
-    @constraint:String {minLength: 1, maxLength: 40}
-    string label = "Home";
-    @constraint:String {minLength: 3, maxLength: 200}
-    string street;
-    string city = "Windhoek";
+    string name;
+    string cuisine;
+    string description;
+    string phone;
+    string address;
     GeoPoint location;
-    boolean isDefault = false;
+    domain:OpeningHours[] openingHours;
+    # Manual switch (e.g. kitchen overloaded) on top of the opening hours
+    boolean acceptingOrders;
+    float rating;
+    int avgPrepMinutes;
+    string createdAt;
+    string updatedAt;
 |};
 
-public type RegisterRequest record {|
+public type RestaurantView record {|
+    *Restaurant;
+    boolean isOpenNow;
+|};
+
+# Persisted in `restaurant_db.menu_items` - one document per dish, `stock` is the live inventory.
+public type MenuItem record {|
+    string itemId;
+    string restaurantId;
+    string name;
+    string description;
+    string category;
+    float price;
+    int stock;
+    boolean available;
+    int prepMinutes;
+    string updatedAt;
+|};
+
+public type TicketStatus "QUEUED"|"PREPARING"|"READY"|"CANCELLED"|"REJECTED";
+
+public type TicketItem record {|
+    string itemId;
+    string name;
+    int quantity;
+|};
+
+# Persisted in `restaurant_db.kitchen_tickets` - the kitchen's work queue.
+public type KitchenTicket record {|
+    string orderId;
+    string restaurantId;
+    string customerName;
+    TicketItem[] items;
+    TicketStatus status;
+    string? notes;
+    string? reason;
+    string receivedAt;
+    int receivedAtMs;
+    string? startedAt;
+    int? startedAtMs;
+    string? readyAt;
+    int? readyAtMs;
+|};
+
+// ---- REST payloads ----
+
+public type RestaurantInput record {|
     @constraint:String {minLength: 2, maxLength: 80}
     string name;
-    @constraint:String {pattern: re `[^@\s]+@[^@\s]+\.[^@\s]+`}
-    string email;
-    @constraint:String {minLength: 7, maxLength: 20}
+    string cuisine;
+    string description = "";
     string phone;
-    @constraint:String {minLength: 6, maxLength: 100}
-    string password;
-    AddressInput? address = ();
-    NotificationPrefs notificationPrefs = {email: true, sms: true, push: true};
+    string address;
+    GeoPoint location;
+    domain:OpeningHours[] openingHours = domain:everyDay("08:00", "22:00");
+    int avgPrepMinutes = 15;
 |};
 
-public type LoginRequest record {|
-    string email;
-    string password;
+public type MenuItemInput record {|
+    @constraint:String {minLength: 2, maxLength: 80}
+    string name;
+    string description = "";
+    string category = "Mains";
+    @constraint:Float {minValue: 0.5, maxValue: 10000}
+    float price;
+    @constraint:Int {minValue: 0}
+    int stock = 20;
+    boolean available = true;
+    int prepMinutes = 10;
 |};
 
-public type UpdateCustomerRequest record {|
-    string? name = ();
-    string? phone = ();
-    NotificationPrefs? notificationPrefs = ();
+public type StockUpdate record {|
+    # Absolute stock level
+    int? stock = ();
+    # Relative change (e.g. +10 after a delivery from a supplier)
+    int? delta = ();
 |};
 
-type OrderStatusChangedEvent record {
-    string orderId;
-    string customerId;
-    string restaurantId;
-    string restaurantName;
-    string? driverName = ();
-    string previousStatus;
-    string status;
-    string? reason = ();
-    float total;
-    string currency;
-    int itemCount;
-    string orderCreatedAt;
-    int orderCreatedAtMs;
-    string at;
-    int atMs;
+public type AcceptingUpdate record {|
+    boolean acceptingOrders;
+|};
+
+// ---- Event payloads ----
+
+type ConfirmedOrderLine record {
+    string itemId;
+    string name;
+    int quantity;
 };
 
-type CustomerRegisteredEvent record {|
-    string customerId;
-    string name;
-    string email;
-    string phone;
-    NotificationPrefs notificationPrefs;
+type OrderConfirmedEvent record {
+    string orderId;
+    string restaurantId;
+    string customerName;
+    ConfirmedOrderLine[] items;
+    string? notes = ();
+};
+
+type OrderCancelledEvent record {
+    string orderId;
+    string restaurantId;
+    string reason;
+};
+
+type KitchenEvent record {|
+    string orderId;
+    string restaurantId;
+    string restaurantName;
+    GeoPoint pickupLocation;
+    string? reason;
+    string at;
 |};
