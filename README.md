@@ -211,6 +211,18 @@ Each service reads environment variables, which `docker-compose.yml` sets:
 
 ## 8. Group members
 
-| Name | Student number | Contribution |
-|------|----------------|--------------|
-|  |  |  |
+**Group 22** – DSA612S, Namibia University of Science and Technology
+
+| # | Full name | Student number | Role / area of responsibility |
+|---|-----------|----------------|-------------------------------|
+| 1 | **Haufiku Frans** | 222127147 | **Group leader** – integration, Docker Compose orchestration, repository management, demo |
+| 2 | Eliaser Angula | 225053241 | Order Service – order state machine and saga |
+| 3 | Matatias Nghihangwa | 225156237 | Payment Service – payment simulation, refunds |
+| 4 | Pandera Katjipuka | 225123851 | Restaurant Service – menus, inventory, opening hours, kitchen |
+| 5 | Monika Shalauda | 222075449 | Customer Service – accounts, addresses, order history |
+| 6 | Risto Sakeus | 225042428 | Delivery Service – driver assignment, A\* routing, location simulation |
+| 7 | Alanray Miller | 223003018 | Notification Service and Kafka topic management |
+| 8 | Kavara Edward | 225017288 | Admin Service, Prometheus/Grafana observability, web UI |
+
+The detailed work allocation, git workflow and defence plan are in
+[`docs/Namibia-Eats-Project-Documentation.docx`](docs/Namibia-Eats-Project-Documentation.docx).
