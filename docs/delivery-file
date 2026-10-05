@@ -1,0 +1,57 @@
+import ballerina/http;
+
+type Driver record {|
+    string id;
+    string name;
+    boolean available;
+|};
+
+type DeliveryAssignment record {|
+    string orderId;
+    string driverId;
+    string driverName;
+    string status;
+|};
+
+Driver[] drivers = [
+    {
+        id: "D001",
+        name: "John",
+        available: true
+    },
+    {
+        id: "D002",
+        name: "Peter",
+        available: false
+    },
+    {
+        id: "D003",
+        name: "Maria",
+        available: true
+    }
+];
+
+service /delivery on new http:Listener(8083) {
+
+    resource function post assignDriver/[string orderId]() returns DeliveryAssignment|http:BadRequest {
+
+        foreach var driver in drivers {
+            if driver.available {
+                driver.available = false;
+
+                return {
+                    orderId: orderId,
+                    driverId: driver.id,
+                    driverName: driver.name,
+                    status: "ASSIGNED"
+                };
+            }
+        }
+
+        return <http:BadRequest>{
+            body: {
+                message: "No drivers are currently available"
+            }
+        };
+    }
+}
