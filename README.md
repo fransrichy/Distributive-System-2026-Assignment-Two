@@ -138,7 +138,40 @@ compensations, persistence) · **[Kafka topics](docs/events.md)** ·
 
 ---
 
-## 4. Testing
+## 4. Screenshots
+
+These were taken from our own run of the platform on 5 October 2026
+(`docker compose --profile monitoring up -d --build`, then `scripts\demo.ps1`).
+
+### Web UI – customer view (http://localhost:8080)
+
+The customer can see the restaurants with their opening status. Oshana Green Kitchen
+shows as closed because of its opening hours. The demo order `ORD-3496965A` from
+Namib Pizza Co. shows as **DELIVERED**, and the header shows the live surge
+multiplier (×1.00, NORMAL).
+
+![Web UI customer view](docs/screenshots/web-ui-customer.png)
+
+### Grafana dashboard (http://localhost:3000)
+
+The dashboard after the demo run shows 3 orders placed, 1 delivered and 2 cancelled
+(the declined card and the customer cancellation), with the surge multiplier at 1.00
+and 0 dead-lettered events. It also shows order state transitions, drivers by
+status, payments by outcome (completed / failed / refunded) and the Kafka event
+flow per topic and per service.
+
+![Grafana dashboard](docs/screenshots/grafana-dashboard.png)
+
+### Prometheus (http://localhost:9090)
+
+Prometheus scrapes the `/metrics` endpoint of all 7 services. Grafana uses it as
+its data source. Try the query `fd_orders_created_total` or `fd_order_transitions_total`.
+
+![Prometheus](docs/screenshots/prometheus.png)
+
+---
+
+## 5. Testing
 
 **43 unit tests** cover the pure domain logic of every service: the state machine,
 surge pricing, opening hours, payment rules, A\* routing and geometry, notification
@@ -151,6 +184,27 @@ cd services/order-service && bal test        # repeat for each service
 End-to-end: `scripts/demo.ps1` / `scripts/demo.sh` place real orders through the gateway
 and assert that the full saga runs, including the failure and compensation paths.
 
+### Our test run (5 October 2026)
+
+We built the whole platform with Docker Compose. All 12 containers came up
+healthy, and then we ran `scripts\demo.ps1`. These are the results:
+
+| Scenario | What happened | Result |
+|----------|---------------|--------|
+| Happy path | `ORD-3496965A` went CREATED → CONFIRMED → PREPARING → READY → OUT_FOR_DELIVERY → DELIVERED in about 1 min 16 s. Driver Petrus Kandjii was assigned and his location updated live on the map. | ✅ Passed |
+| Declined card | The payment failed ("Card declined by issuer"), so the order was cancelled automatically (saga compensation). | ✅ Passed |
+| Customer cancels after paying | The order was cancelled and the payment was **REFUNDED**. | ✅ Passed |
+| Inventory | The Margherita stock went from 30 to 28 after the kitchen reserved it. | ✅ Passed |
+| Notifications | The customer received email, SMS and push alerts for every step. 24 notifications were sent in total. | ✅ Passed |
+| Surge pricing | The quote for 2.87 km was N$26.48 at ×1.0 (NORMAL). | ✅ Passed |
+| Admin reports | 3 orders, 1 delivered, 2 cancelled, GMV N$261.48, on-time rate 100%. | ✅ Passed |
+
+Kafka events counted by the admin service during the run: `orders.created` 3,
+`orders.confirmed` 2, `orders.cancelled` 2, `payments.completed` 2,
+`payments.failed` 1, `payments.refunded` 1, `delivery.assigned` 2,
+`delivery.picked-up` 1, `delivery.completed` 1, `delivery.location-updated` 56,
+`notifications.sent` 24.
+
 Useful manual checks:
 
 ```bash
@@ -162,7 +216,7 @@ docker compose stop delivery-service                           # surge degrades 
 
 ---
 
-## 5. Project structure
+## 6. Project structure
 
 ```
 ├── docker-compose.yml          # full orchestration (profiles: monitoring, tools)
@@ -185,7 +239,7 @@ docker compose stop delivery-service                           # surge degrades 
 └── docs/                       # architecture, events, API reference
 ```
 
-## 6. Configuration
+## 7. Configuration
 
 Each service reads environment variables, which `docker-compose.yml` sets:
 
@@ -199,7 +253,7 @@ Each service reads environment variables, which `docker-compose.yml` sets:
 | `TZ_OFFSET_HOURS` | 2 | Africa/Windhoek |
 | `ON_TIME_TARGET_MINUTES` | 45 | delivery promise for the on-time KPI |
 
-## 7. Evaluation criteria mapping
+## 8. Evaluation criteria mapping
 
 | Criterion | Weight | Evidence |
 |-----------|-------:|----------|
@@ -209,7 +263,7 @@ Each service reads environment variables, which `docker-compose.yml` sets:
 | Docker configuration & orchestration | 20% | multi-stage non-root images, health checks, dependency ordering, restart policies, memory limits, isolated networks, scaling, profiles |
 | Documentation & presentation | 5% | this README, `docs/`, Mermaid diagrams, demo scripts |
 
-## 8. Group members
+## 9. Group members
 
 **Group 22** – DSA612S, Namibia University of Science and Technology
 
