@@ -1,5 +1,17 @@
-// Pure domain logic of the Payment service: the simulated payment gateway's rules.
-
+// -----------------------------------------------------------------------------
+// Payment Domain Logic
+// -----------------------------------------------------------------------------
+// This module contains the core payment rules used by the Payment service.
+//
+// The payment service supports three payment methods:
+//   1. CARD
+//   2. MOBILE_MONEY
+//   3. CASH_ON_DELIVERY
+//
+// The functions in this module do not access MongoDB, Kafka, HTTP, or any
+// external service. Keeping these rules here makes the payment decisions easy
+// to test and reuse.
+// -----------------------------------------------------------------------------
 public type PaymentDecision record {|
     boolean approved;
     string? reason;
