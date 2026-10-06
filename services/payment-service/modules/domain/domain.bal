@@ -68,11 +68,16 @@ public isolated function decide(string method, float amount, string? cardLast4, 
     return {approved: true, reason: ()};
 }
 
-# Gateway style transaction reference, e.g. `CRD-PAY-1A2B3C4D`.
+# Creates a readable transaction reference for a successful payment.
 #
-# + method - payment method
-# + paymentId - payment identifier
-# + return - transaction reference
+# The reference uses a short prefix to identify the payment method:
+# CARD              -> CRD-PAY-12345678
+# MOBILE_MONEY      -> MOM-PAY-12345678
+# CASH_ON_DELIVERY  -> COD-PAY-12345678
+#
+# + method - payment method used for the transaction
+# + paymentId - unique identifier of the payment
+# + return - generated transaction reference
 public isolated function transactionReference(string method, string paymentId) returns string {
     string prefix = method == "CARD" ? "CRD" : method == "MOBILE_MONEY" ? "MOM" : "COD";
     return prefix + "-" + paymentId;
