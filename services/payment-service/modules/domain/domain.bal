@@ -7,7 +7,7 @@
 //   1. CARD
 //   2. MOBILE_MONEY
 //   3. CASH_ON_DELIVERY
-//
+// 
 // The functions in this module do not access MongoDB, Kafka, HTTP, or any
 // external service. Keeping these rules here makes the payment decisions easy
 // to test and reuse.
@@ -23,14 +23,17 @@ public const float CASH_LIMIT = 1500.0;
 # Test card: any card ending in 0000 is declined by the (simulated) issuer
 public const DECLINED_TEST_CARD = "0000";
 
-# Decides whether a simulated payment succeeds.
+# Decides whether a payment should be approved or declined.
 #
-# + method - CARD, MOBILE_MONEY or CASH_ON_DELIVERY
-# + amount - amount to charge (NAD)
-# + cardLast4 - last four card digits, if paying by card
-# + randomValue - uniform random number in [0, 1) used to simulate gateway failures
-# + failureRate - probability of a random gateway failure
-# + return - the decision and, if declined, the reason
+# The decision checks the payment amount, payment method, payment limits,
+# test-card rejection rule, and simulated gateway failure rate.
+#
+# + method - payment method selected by the customer
+# + amount - payment amount in NAD
+# + cardLast4 - last four digits of the card when CARD is used
+# + randomValue - random value between 0 and 1 used for gateway simulation
+# + failureRate - probability of a simulated gateway failure
+# + return - approved or declined payment decision with an optional reason
 public isolated function decide(string method, float amount, string? cardLast4, float randomValue, float failureRate)
         returns PaymentDecision {
     if amount <= 0.0 {
