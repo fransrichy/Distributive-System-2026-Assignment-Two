@@ -12,6 +12,9 @@ public const TOPIC_ORDERS_CREATED = "orders.created";
 public const TOPIC_ORDERS_CONFIRMED = "orders.confirmed";
 public const TOPIC_ORDERS_STATUS_CHANGED = "orders.status-changed";
 public const TOPIC_ORDERS_CANCELLED = "orders.cancelled";
+// Payment lifecycle events published by the Payment service.
+// Other services can consume these events to react to payment completion,
+// failure, or refund operations.
 public const TOPIC_PAYMENTS_COMPLETED = "payments.completed";
 public const TOPIC_PAYMENTS_FAILED = "payments.failed";
 public const TOPIC_PAYMENTS_REFUNDED = "payments.refunded";
@@ -30,6 +33,9 @@ const int MAX_HANDLER_ATTEMPTS = 3;
 final string KAFKA_BOOTSTRAP = envOr("KAFKA_BOOTSTRAP_SERVERS", "localhost:9094");
 
 # Common envelope wrapped around every event published on the platform.
+// Standard envelope used for events published through Kafka.
+// It provides common metadata such as the event ID, source service,
+// timestamp, partition key, and event payload.
 public type EventEnvelope record {|
     # Globally unique id - consumers use it for idempotent processing
     string eventId;
