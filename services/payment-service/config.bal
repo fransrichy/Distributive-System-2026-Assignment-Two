@@ -1,6 +1,10 @@
+// Unique service name used for logging, Kafka consumer identification,
+// and platform-level service configuration.
 const SERVICE_NAME = "payment-service";
 
+// HTTP port exposed by the Payment service.
 final int HTTP_PORT = envIntOr("HTTP_PORT", 8084);
+// MongoDB connection used by the Payment service.
 final string MONGO_URI = envOr("MONGO_URI", "mongodb://localhost:27017");
 final string MONGO_DATABASE = envOr("MONGO_DATABASE", "payment_db");
 # Simulated gateway latency and random failure probability
