@@ -26,6 +26,12 @@ function findPaymentByOrder(string orderId) returns Payment|error? {
 
 # Charges an order. The unique index on `orderId` makes processing idempotent: a
 # redelivered `orders.created` event can never charge the customer twice.
+// Processes a payment for a newly created order.
+//
+// The payment starts in the PENDING state while the simulated gateway
+// evaluates the payment rules. Once a decision is available, the payment
+// is updated to COMPLETED or FAILED and the corresponding Kafka event
+// is published for other services to consume.
 function processPayment(OrderCreatedEvent event) returns error? {
     Payment? existing = check findPaymentByOrder(event.orderId);
     if existing is Payment {
@@ -94,6 +100,11 @@ function processPayment(OrderCreatedEvent event) returns error? {
 
 # Compensation for cancelled orders: refund captured payments, or void the payment if the
 # cancellation overtook the `orders.created` event.
+// Handles payment-related actions when an order is cancelled.
+//
+// Completed payments are changed to REFUNDED. If the order was cancelled
+// before a payment record existed, a VOIDED record is created so that the
+// cancellation is still represented in the payment service's history.
 function onOrderCancelled(OrderCancelledEvent event) returns error? {
     Payment? payment = check findPaymentByOrder(event.orderId);
     if payment is () {
