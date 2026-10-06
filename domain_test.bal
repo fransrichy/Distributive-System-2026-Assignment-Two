@@ -1,50 +1,231 @@
 import ballerina/test;
 
-// 2026-10-05 is a Monday. Seconds since epoch at 00:00 (already in local time).
-const int MONDAY_MIDNIGHT = 1791158400;
-
-function at(int dayOffset, int hour, int minute) returns int =>
-    MONDAY_MIDNIGHT + dayOffset * 86400 + hour * 3600 + minute * 60;
+// -----------------------------------------------------------------------------
+// Payment Domain Test Suite
+// -----------------------------------------------------------------------------
+// These tests verify the core payment rules independently from HTTP, MongoDB,
+// Kafka, Docker, and other infrastructure.
+//
+// Keeping these tests focused on domain behaviour makes it easier to identify
+// whether a payment failure is caused by business rules or by infrastructure.
+// -----------------------------------------------------------------------------
 
 @test:Config {}
-function dayCodeIsCorrect() {
-    test:assertEquals(dayCode(0), "THU"); // 1970-01-01
-    test:assertEquals(dayCode(MONDAY_MIDNIGHT), "MON");
-    test:assertEquals(dayCode(at(6, 12, 0)), "SUN");
+function cardPaymentsAreApproved() {
+    PaymentDecision decision = decide("CARD", 250.0, "4242", 0.9, 0.0);
+
+    test:assertTrue(decision.approved);
+    test:assertEquals(decision.reason, ());
 }
 
 @test:Config {}
-function regularHours() {
-    OpeningHours[] hours = [{day: "MON", open: "10:00", close: "21:00"}];
-    test:assertTrue(isOpenAt(hours, at(0, 10, 0)));
-    test:assertTrue(isOpenAt(hours, at(0, 20, 59)));
-    test:assertFalse(isOpenAt(hours, at(0, 21, 0)));
-    test:assertFalse(isOpenAt(hours, at(0, 9, 59)));
-    test:assertFalse(isOpenAt(hours, at(1, 12, 0)), "closed on Tuesday");
+function cardPaymentWithDifferentCardNumberIsApproved() {
+    PaymentDecision decision = decide("CARD", 500.0, "1234", 0.8, 0.0);
+
+    test:assertTrue(decision.approved);
+    test:assertEquals(decision.reason, ());
 }
 
 @test:Config {}
-function overnightHoursSpillIntoNextDay() {
-    OpeningHours[] hours = [{day: "FRI", open: "18:00", close: "02:00"}];
-    test:assertTrue(isOpenAt(hours, at(4, 23, 30)), "Friday night");
-    test:assertTrue(isOpenAt(hours, at(5, 1, 30)), "early Saturday");
-    test:assertFalse(isOpenAt(hours, at(5, 2, 30)));
-    test:assertFalse(isOpenAt(hours, at(4, 17, 0)));
+function testCardIsDeclined() {
+    PaymentDecision decision = decide("CARD", 250.0, "0000", 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Card declined by issuer");
 }
 
 @test:Config {}
-function allDaySchedule() {
-    OpeningHours[] hours = everyDay("00:00", "23:59");
-    test:assertEquals(hours.length(), 7);
-    test:assertTrue(isOpenAt(hours, at(2, 23, 59)));
-    test:assertTrue(isOpenAt(hours, at(3, 0, 0)));
+function cardLimitIsEnforced() {
+    PaymentDecision decision = decide("CARD", 5000.01, "4242", 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Card limit exceeded");
 }
 
 @test:Config {}
-function scheduleValidation() {
-    test:assertEquals(validateHours([{day: "MON", open: "08:00", close: "17:00"}]), ());
-    test:assertTrue(validateHours([{day: "XYZ", open: "08:00", close: "17:00"}]) is string);
-    test:assertTrue(validateHours([{day: "MON", open: "25:00", close: "17:00"}]) is string);
-    test:assertTrue(validateHours([{day: "MON", open: "08:00", close: "08:00"}]) is string);
-    test:assertTrue(parseTime("7") is error);
+function cardAtMaximumLimitIsAccepted() {
+    PaymentDecision decision = decide("CARD", 5000.0, "4242", 0.9, 0.0);
+
+    test:assertTrue(decision.approved);
+}
+
+@test:Config {}
+function mobileMoneyWithinLimitIsApproved() {
+    PaymentDecision decision = decide("MOBILE_MONEY", 1000.0, (), 0.9, 0.0);
+
+    test:assertTrue(decision.approved);
+}
+
+@test:Config {}
+function mobileMoneyLimitIsEnforced() {
+    PaymentDecision decision = decide("MOBILE_MONEY", 3000.01, (), 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Mobile money wallet limit exceeded");
+}
+
+@test:Config {}
+function mobileMoneyAtMaximumLimitIsAccepted() {
+    PaymentDecision decision = decide("MOBILE_MONEY", 3000.0, (), 0.9, 0.0);
+
+    test:assertTrue(decision.approved);
+}
+
+@test:Config {}
+function cashOnDeliveryWithinLimitIsApproved() {
+    PaymentDecision decision = decide("CASH_ON_DELIVERY", 750.0, (), 0.9, 0.0);
+
+    test:assertTrue(decision.approved);
+}
+
+@test:Config {}
+function cashOnDeliveryLimitIsEnforced() {
+    PaymentDecision decision = decide("CASH_ON_DELIVERY", 1500.01, (), 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Cash on delivery is limited to N$1500");
+}
+
+@test:Config {}
+function cashOnDeliveryAtMaximumLimitIsAccepted() {
+    PaymentDecision decision = decide("CASH_ON_DELIVERY", 1500.0, (), 0.9, 0.0);
+
+    test:assertTrue(decision.approved);
+}
+
+@test:Config {}
+function limitsAreEnforcedPerMethod() {
+    test:assertFalse(decide("CARD", 5000.01, (), 0.9, 0.0).approved);
+    test:assertFalse(decide("MOBILE_MONEY", 3000.01, (), 0.9, 0.0).approved);
+    test:assertFalse(decide("CASH_ON_DELIVERY", 1500.01, (), 0.9, 0.0).approved);
+
+    test:assertTrue(decide("CARD", 5000.0, "4242", 0.9, 0.0).approved);
+    test:assertTrue(decide("MOBILE_MONEY", 3000.0, (), 0.9, 0.0).approved);
+    test:assertTrue(decide("CASH_ON_DELIVERY", 1500.0, (), 0.9, 0.0).approved);
+}
+
+@test:Config {}
+function invalidAmountIsDeclined() {
+    PaymentDecision decision = decide("CARD", 0.0, "4242", 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Invalid amount");
+}
+
+@test:Config {}
+function negativeAmountIsDeclined() {
+    PaymentDecision decision = decide("CARD", -100.0, "4242", 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Invalid amount");
+}
+
+@test:Config {}
+function invalidAmountIsCheckedBeforePaymentMethod() {
+    PaymentDecision decision = decide("BITCOIN", 0.0, (), 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Invalid amount");
+}
+
+@test:Config {}
+function unsupportedPaymentMethodIsDeclined() {
+    PaymentDecision decision = decide("BITCOIN", 100.0, (), 0.9, 0.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Unsupported payment method BITCOIN");
+}
+
+@test:Config {}
+function randomGatewayFailures() {
+    PaymentDecision failed = decide("CARD", 100.0, (), 0.05, 0.1);
+    PaymentDecision approved = decide("CARD", 100.0, (), 0.5, 0.1);
+
+    test:assertFalse(failed.approved);
+    test:assertEquals(failed.reason, "Payment gateway timeout");
+
+    test:assertTrue(approved.approved);
+    test:assertEquals(approved.reason, ());
+}
+
+@test:Config {}
+function zeroFailureRateDoesNotCauseRandomFailure() {
+    PaymentDecision decision = decide("CARD", 100.0, "4242", 0.0, 0.0);
+
+    test:assertTrue(decision.approved);
+}
+
+@test:Config {}
+function failureRateOfOneCausesGatewayFailure() {
+    PaymentDecision decision = decide("CARD", 100.0, "4242", 0.0, 1.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Payment gateway timeout");
+}
+
+@test:Config {}
+function issuerDeclineTakesPriorityOverGatewayFailure() {
+    PaymentDecision decision = decide("CARD", 100.0, "0000", 0.0, 1.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Card declined by issuer");
+}
+
+@test:Config {}
+function cardLimitTakesPriorityOverGatewayFailure() {
+    PaymentDecision decision = decide("CARD", 5000.01, "4242", 0.0, 1.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Card limit exceeded");
+}
+
+@test:Config {}
+function mobileMoneyLimitTakesPriorityOverGatewayFailure() {
+    PaymentDecision decision = decide("MOBILE_MONEY", 3000.01, (), 0.0, 1.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Mobile money wallet limit exceeded");
+}
+
+@test:Config {}
+function cashLimitTakesPriorityOverGatewayFailure() {
+    PaymentDecision decision = decide("CASH_ON_DELIVERY", 1500.01, (), 0.0, 1.0);
+
+    test:assertFalse(decision.approved);
+    test:assertEquals(decision.reason, "Cash on delivery is limited to N$1500");
+}
+
+@test:Config {}
+function transactionReferencesArePrefixed() {
+    test:assertEquals(
+        transactionReference("CARD", "PAY-1"),
+        "CRD-PAY-1"
+    );
+
+    test:assertEquals(
+        transactionReference("MOBILE_MONEY", "PAY-2"),
+        "MOM-PAY-2"
+    );
+
+    test:assertEquals(
+        transactionReference("CASH_ON_DELIVERY", "PAY-3"),
+        "COD-PAY-3"
+    );
+}
+
+@test:Config {}
+function transactionReferencePreservesPaymentId() {
+    string paymentId = "PAY-ABC123";
+
+    test:assertEquals(
+        transactionReference("CARD", paymentId),
+        "CRD-PAY-ABC123"
+    );
+}
+
+@test:Config {}
+function transactionReferenceUsesExpectedPrefixes() {
+    test:assertTrue(transactionReference("CARD", "PAY-1").startsWith("CRD-"));
+    test:assertTrue(transactionReference("MOBILE_MONEY", "PAY-2").startsWith("MOM-"));
+    test:assertTrue(transactionReference("CASH_ON_DELIVERY", "PAY-3").startsWith("COD-"));
 }

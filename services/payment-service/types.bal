@@ -1,11 +1,22 @@
+// -----------------------------------------------------------------------------
+// Payment Service Data Types
+// -----------------------------------------------------------------------------
+// These types define the data owned and exchanged by the Payment service.
+// -----------------------------------------------------------------------------
+
 // Represents the different stages in the lifecycle of a payment.
-// A payment can remain pending, complete successfully, fail, be refunded,
-// or be voided when an order is cancelled before payment processing.
+//
+// PENDING   - payment has been created and is being processed.
+// COMPLETED - payment was successfully approved.
+// FAILED    - payment was rejected or the gateway failed.
+// REFUNDED  - a completed payment was refunded.
+// VOIDED    - the order was cancelled before payment processing completed.
 public type PaymentStatus "PENDING"|"COMPLETED"|"FAILED"|"REFUNDED"|"VOIDED";
 
-# Persisted in `payment_db.payments` (unique per orderId).
 // Stores the complete payment record owned by the Payment service.
-// These records are persisted in the service's MongoDB database.
+//
+// Payment records are persisted in the service's own MongoDB database.
+// Other services should use events rather than accessing this data directly.
 public type Payment record {|
     string paymentId;
     string orderId;
@@ -33,6 +44,7 @@ public type PaymentStats record {|
     float refundedAmount;
 |};
 
+// Event received when a new order requires payment processing.
 type OrderCreatedEvent record {
     string orderId;
     string customerId;
@@ -42,12 +54,14 @@ type OrderCreatedEvent record {
     string? cardLast4 = ();
 };
 
+// Event received when an existing order is cancelled.
 type OrderCancelledEvent record {
     string orderId;
     string customerId;
     string reason;
 };
 
+// Common payment information included in payment lifecycle events.
 type PaymentEvent record {|
     string paymentId;
     string orderId;
